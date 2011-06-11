@@ -1,0 +1,36 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU1 MENU 
+BEGIN
+    POPUP "&Menu"
+    BEGIN
+        MENUITEM "&About",                       ID_ABOUT
+        MENUITEM "&Exit",                        ID_EXIT
+    END
+END
+
+IDI_PROGICON	ICON "prog.ico"
+IDB_BMP			BITMAP "shutdown.bmp"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+ABOUTDLGBOX DIALOG DISCARDABLE 10, 0, 135, 108
+STYLE DS_MODALFRAME | WS_CAPTION | WS_SYSMENU  | WS_VISIBLE | WS_POPUP
+CAPTION "About Shutdown Timer"
+FONT 10, "Verdana"
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,50,89,30,14
+    GROUPBOX        "",IDC_STATIC,1,55,133,52
+    CTEXT           "This product is manufactured by", IDC_STATIC,1,64,130,15
+END
