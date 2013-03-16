@@ -1,30 +1,76 @@
-//#define _WIN32_IE 0x0800
-#include <windows.h>
-#include <string.h>
-//#include <tchar.h>
-#include <stdio.h>
-#include <commctrl.h>
+/*
+ * Author	:	Saint Atique
+ * Notes	:
+ *		wchar_t: wchar_t is useless we are using some Windows Common Controls etc
+ *		no header file, why>
+ *			because microsoft sample for a windows common control did the code in only one file
+ *			line 1
+ *			line 2
+ * Special example in this program:
+ *			Painting on dialog box (notice the about box), handling nm click message on the dialog bo
+ *			Using Dialog Callback Procedure like Window callback procedure
+ */
 
+//#define _WIN32_IE 0x0800
+// using header file order windows common controls demo sample of microsoft
+#include <string.h>
+#include <stdio.h>
+//#include <tchar.h>			// As with windows common controls and other APIs Unicode is a requirement, wchar_t does not benefit as we have to keep unicode enabled always
+#include <windows.h>
+#include <windowsx.h>// for HANDLE_MSG
 #include "resource.h"
+#include <commctrl.h>
 
 #define HorizSpace 50
 #define VertSpace 20
+
+// manifest is not required if we use this on VS 2005 or later
+// Enable Visual Style; following windows common controls demo sample of microsoft
+#if defined _M_IX86
+#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='x86' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#elif defined _M_IA64
+#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='ia64' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#elif defined _M_X64
+#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='amd64' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#else
+#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#endif
+#pragma endregion
+
+// Following windows common controls demo sample of microsoft
+HINSTANCE g_hInst;  // The handle to the instance of the current module
+
+//
+//   FUNCTION: OnClose(HWND)
+//
+//   PURPOSE: Process the WM_CLOSE message
+//
+void OnClose(HWND hWnd)
+{
+    // EndDialog(hWnd, 0);			// our app is window, not dialog
+	PostMessage(hWnd, WM_CLOSE, 0, 0);
+}
 
 //  CreateDatePick creates a DTP control within a dialog box.
 //  Returns the handle to the new DTP control if successful, or NULL 
 //  otherwise.
 //
 //    hwndMain - The handle to the main window.
-//    g_hinst  - global handle to the program instance.
+//    g_hInst  - global handle to the program instance.
 
 static HWND g_hLink;
 
-HINSTANCE g_hinst;
+// enum dialog status for clarity
+enum DialogStatuses { Inactive, TimeDateSelection, ShutdownSituation};
+
+// enum current focus for clarity
+enum FocusControl { None, DateControl, TimeControl};
+
 SYSTEMTIME lpSysTime;
 SYSTEMTIME lpSysDate;
 UINT_PTR IDT_TIMER1=10;
 UINT_PTR IDT_TIMER2=20;
-BYTE showDialogue = 1;
+DialogStatuses dialogStatus = TimeDateSelection;
 WORD count = 30;
 BOOL secondtimerstarted = FALSE;
 
@@ -34,7 +80,7 @@ static HWND hwndButton;
 static HWND g_hwnd;
 
 
-static TCHAR warnMsg[100] = L"";
+static wchar_t warnMsg[100] = L"";
 /*static COLORREF myColor1 = 0x00ffffff; //0x00919191;
 static COLORREF myColor2 = 0x00ffffff; //0x00919191;*/
 
@@ -48,19 +94,19 @@ HWND CreateSysLink(HWND, HINSTANCE, RECT);
 
 HWND WINAPI CreateTimePick(HWND);
 HWND WINAPI CreateDatePick(HWND);
-int verify_inputDT();
-BYTE react_click(HWND hwnd, HDC hdc);
+int verifyInputDateTime();
+FocusControl reactOnClick(HWND hwnd, HDC hdc);
 
-int verify_inputTime(SYSTEMTIME currentLocalTime);
+int verifyInputTime(SYSTEMTIME currentLocalTime);
 void runProgram(HWND hwnd);
-BOOL isTimeUp ();
+BOOL isTimeUp();
 BOOL MySystemShutdown();
 
 // The main window class name.
-static TCHAR szWindowClass[] = L"myWindow";
+static wchar_t szWindowClass[] = L"myWindow";
 
 // The string that appears in the application's title bar.
-static TCHAR szTitle[] = L"Shutdown Timer";
+static wchar_t szTitle[] = L"Shutdown Timer";
 
 int WINAPI WinMain(HINSTANCE hInstance,
                    HINSTANCE hPrevInstance,
@@ -123,7 +169,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
         return 1;
     }
 
-	g_hinst = hInstance;
+	g_hInst = hInstance;
 	g_hwnd = hWnd;
 
     // The parameters to ShowWindow explained:
@@ -154,18 +200,21 @@ LONG APIENTRY MainWndProc(HWND hwnd,                // window handle
 	PAINTSTRUCT ps;
     static HDC hdc;
 	static HWND hwndDlg = NULL;
-	char *inst = "Select shutdown time:";
+	// char *inst = "Select shutdown time:";		// seems unnecessary, commented march 14, 2013
 	int ret = 0;
 
+	// static LPCWSTR dayToday[7] = {L"Sunday", L"Monday", L"Tuesday", L"Wednesday", L"Thursday", L"Friday", L"Saturday"};
+	// we are using ANSI char here
 	static LPCSTR dayToday[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+	FocusControl currentFocus = None;		// had to declare here because of the error case label skipped initialization of currentfocus
 
-
- 
- 
     switch (message) { 
         case WM_CREATE:
+			// Add date time picker
 			hwndTimeP = CreateTimePick(hwnd);
 			hwndDateP = CreateDatePick(hwnd);
+
+			// Add button to the window
 			hwndButton = CreateWindow( 
 									L"BUTTON",   // Predefined class; Unicode assumed. 
 									L"Start",       // Button text. 
@@ -186,27 +235,28 @@ LONG APIENTRY MainWndProc(HWND hwnd,                // window handle
 			RECT rect;
 
 			hFont = CreateFont(14,0,0,0,FW_DONTCARE,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_OUTLINE_PRECIS, 
-				CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY, VARIABLE_PITCH,TEXT("Verdana"));
+				CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY, VARIABLE_PITCH, L"Verdana");
 			// Select font
 			SelectObject(hdc, hFont);
 
-			if (showDialogue == 1) {
+			if (dialogStatus == TimeDateSelection) {
 				//SetBkColor(hdc, 0x00606060);
 				SetTextColor(hdc, myColor1);
 				SetRect(&rect, HorizSpace,VertSpace,100,50);
-				DrawText(hdc, TEXT("Choose Shutdown Time:"), -1,&rect, DT_NOCLIP);
+				DrawText(hdc, L"Choose Shutdown Time:", -1,&rect, DT_NOCLIP);
 
 				SetTextColor(hdc, myColor2);
 				SetRect(&rect, HorizSpace,VertSpace+55,100,50);
-				DrawText(hdc, TEXT("Choose Date:"), -1,&rect, DT_NOCLIP);
+				DrawText(hdc, L"Choose Date:", -1,&rect, DT_NOCLIP);
 
 				SetTextColor(hdc, 0x000000ff);
 				SetRect(&rect, HorizSpace,VertSpace+105,100,50);
 				DrawText(hdc, warnMsg, -1,&rect, DT_NOCLIP);
 			}
-			else if (showDialogue == 2){
+			else if (dialogStatus == ShutdownSituation){
 				SYSTEMTIME lt;
 				GetLocalTime(&lt);
+				// Using ANSI chars here
 				char greeting[100];
 
 				// Day of the week
@@ -230,29 +280,36 @@ LONG APIENTRY MainWndProc(HWND hwnd,                // window handle
 		case WM_COMMAND:
 			switch(LOWORD (wParam)) {
 				case BN_DBLCLK: case BN_CLICKED:
-					// Make a reaction
+					// Button has been clicked
+					// Retrieve time and date
 					DateTime_GetSystemtime(hwndTimeP, &lpSysTime);
 					DateTime_GetSystemtime(hwndDateP, &lpSysDate);
 
 					lpSysTime.wYear = lpSysDate.wYear;
 					lpSysTime.wMonth = lpSysDate.wMonth;
-					lpSysTime.wSecond = lpSysDate.wSecond;
+					lpSysTime.wDay = lpSysDate.wDay;		// what a big mistake I did previously
 
-					ret = react_click(hwnd, hdc);
-					if (ret == 1)
-						SetFocus(hwndDateP);
-					else if (ret == 2)
-						SetFocus(hwndTimeP);
-					/* char str[100];
+					/*
+					Debugging statements used to find some mistakes done
+					char str[200];
 					SYSTEMTIME clp;
 					GetLocalTime(&clp);
 
+					sprintf_s(str, "current time: %d:%d:%d, received from user: %d:%d:%d", clp.wHour, clp.wMinute, clp.wSecond, lpSysTime.wHour, lpSysTime.wMinute, lpSysTime.wSecond);
+					MessageBoxA(hwnd, str, "current time", MB_OK);
 					sprintf_s(str, "Local time: %d:%d:%d and date %d/%d/%d.\nInput time: %d:%d:%d and date %d/%d/%d.", clp.wHour, clp.wMinute, clp.wSecond, clp.wYear, clp.wMonth, clp.wDay, lpSysTime.wHour, lpSysTime.wMinute, lpSysTime.wSecond, lpSysDate.wYear, lpSysDate.wMonth, lpSysDate.wDay);
 					MessageBoxA(hwnd, str, "Notice", MB_OK);
 					//ShowWindow(hwnd, SW_HIDE);*/
+
+					currentFocus = reactOnClick(hwnd, hdc);
+					if (currentFocus == DateControl)
+						SetFocus(hwndDateP);
+					else if (currentFocus == TimeControl)
+						SetFocus(hwndTimeP);
+
 					break;
 				case ID_ABOUT:
-				    hwndDlg = CreateDialog (g_hinst,
+				    hwndDlg = CreateDialog (g_hInst,
                          MAKEINTRESOURCE(ABOUTDLGBOX),
                          hwnd,
                          DlgProc);
@@ -261,7 +318,9 @@ LONG APIENTRY MainWndProc(HWND hwnd,                // window handle
 						MessageBox(hwnd, L"Could not create DlgBox.", L"Notice", MB_OK);
 					break;
 				case ID_EXIT:
-					PostMessage(hwnd, WM_CLOSE, 0, 0);
+					// Handle the WM_CLOSE message in OnClose
+					HANDLE_MSG (hwnd, WM_CLOSE, OnClose);
+
 				default:
 					//MessageBox(hwnd, "Button not Clicked.", "Notice", MB_OK);
 					break;
@@ -272,15 +331,18 @@ LONG APIENTRY MainWndProc(HWND hwnd,                // window handle
 			PostQuitMessage(0);
 			if (IDT_TIMER1)
 				KillTimer(hwnd, IDT_TIMER1);
+			if (IDT_TIMER2)
+				KillTimer(hwnd, IDT_TIMER2);
 			break;
 
 	   case WM_TIMER:
 			if (secondtimerstarted==FALSE && isTimeUp()) {
 				secondtimerstarted = TRUE;
-				showDialogue = 2;
+				dialogStatus = ShutdownSituation;
 				ShowWindow(hwnd, SW_SHOWNORMAL);
 				UpdateWindow(hwnd);
 				SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE);
+				KillTimer(hwnd, IDT_TIMER1);
 				SetTimer(hwnd, IDT_TIMER2, 1000, (TIMERPROC)NULL);
 				HMENU hmenu = GetMenu(hwnd);		// hwnd is the handle of the window containing the menu
 				EnableMenuItem(hmenu, ID_EXIT, MF_GRAYED);
@@ -318,12 +380,12 @@ HWND WINAPI CreateTimePick(HWND hwndMain)
 
     hwndTimePick = CreateWindowEx(0,
                          DATETIMEPICK_CLASS,
-                         TEXT("DateTime"),
+                         L"DateTime",
                          WS_BORDER|WS_CHILD|WS_VISIBLE|DTS_TIMEFORMAT|WS_TABSTOP,
                          HorizSpace,VertSpace+20,180,20,
                          hwndMain,
                          NULL,
-                         g_hinst,
+                         g_hInst,
                          NULL);
     return (hwndTimePick);
 }
@@ -340,18 +402,21 @@ HWND WINAPI CreateDatePick(HWND hwndMain)
 
     hwndDatePick = CreateWindowEx(0,
                          DATETIMEPICK_CLASS,
-                         TEXT("DateTime"),
+                         L"DateTime",
                          WS_BORDER|WS_CHILD|WS_VISIBLE|WS_TABSTOP,
                          HorizSpace,VertSpace+75,180,20,
                          hwndMain,
                          NULL,
-                         g_hinst,
+                         g_hInst,
                          NULL);
 
     return (hwndDatePick);
 }
 
-BYTE react_click(HWND hwnd, HDC hdc) {
+/*
+ * Take input, verify and set the vairables
+ */
+FocusControl reactOnClick(HWND hwnd, HDC hdc) {
 	// verify input
 	/************************************************
 	Return Codes
@@ -362,7 +427,7 @@ BYTE react_click(HWND hwnd, HDC hdc) {
 	4 = ok
 	************************************************/
 
-	int ret = verify_inputDT();
+	int ret = verifyInputDateTime();
 	// invalid input
 	if (ret == 11) {
 		myColor1 = 0x00aaaaaa;
@@ -370,23 +435,44 @@ BYTE react_click(HWND hwnd, HDC hdc) {
 		// change_font color for time
 		wsprintf(warnMsg, L"Entered date is in past!");
 		InvalidateRgn(hwnd, NULL, FALSE);
-		return 1;
+		return DateControl;
 	}
 	else if (ret == 12) {
 		myColor1 = 0x000000ff;
 		myColor2 = 0x00aaaaaa;
 		wsprintf(warnMsg, L"Entered time is in past!");
 		InvalidateRgn(hwnd, NULL, FALSE);
-		return 2;
+		return TimeControl;
 	}
 
 	// Shutdown too near to current time
 	else if (ret == 2) {
 		if (MessageBox(hwnd, L"Shutdown time too near. Click yes to continue, no to choose time again.", L"Time too near.", MB_YESNO | MB_ICONINFORMATION) == IDYES) {
 			//MessageBox(hwnd, "Yes selected", "Notice", MB_OK);
+			// if time is already up update the window to show notification to user
+			// skip first timer, start second timer
+			if (isTimeUp()) {
+				warnMsg[0] = '\0';
+				DestroyWindow(hwndDateP);
+				DestroyWindow(hwndTimeP);
+				DestroyWindow(hwndButton);
+				InvalidateRgn(hwnd, NULL, TRUE);
+
+				secondtimerstarted = TRUE;
+				dialogStatus = ShutdownSituation;
+				//ShowWindow(hwnd, SW_SHOWNORMAL);
+				UpdateWindow(hwnd);
+				SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOSIZE);
+				SetTimer(hwnd, IDT_TIMER2, 1000, (TIMERPROC)NULL);
+				HMENU hmenu = GetMenu(hwnd);		// hwnd is the handle of the window containing the menu
+				EnableMenuItem(hmenu, ID_EXIT, MF_GRAYED);
+				DrawMenuBar(hwnd);
+			}
 			// start timer etc to shutdown
 			// and hide window
-			runProgram(hwnd);
+			else {
+				runProgram(hwnd);
+			}
 		}
 	}
 	// too far
@@ -401,10 +487,10 @@ BYTE react_click(HWND hwnd, HDC hdc) {
 	else if (ret == 4) {
 		runProgram(hwnd);
 	}
-	return -1;
+	return None;
 }
 
-int verify_inputDT() {
+int verifyInputDateTime() {
 	// get current system time
 	SYSTEMTIME currentLocalTime;
 	GetLocalTime(&currentLocalTime);
@@ -419,7 +505,7 @@ int verify_inputDT() {
 			if (lpSysDate.wDay < currentLocalTime.wDay)
 				return 11;
 			else if (lpSysDate.wDay == currentLocalTime.wDay)
-				return verify_inputTime(currentLocalTime);
+				return verifyInputTime(currentLocalTime);
 			else if (lpSysDate.wDay > currentLocalTime.wDay + 1)
 				return 3;
 			else if (lpSysDate.wDay > currentLocalTime.wDay)
@@ -434,7 +520,10 @@ int verify_inputDT() {
 	return -1;
 }
 
-int verify_inputTime(SYSTEMTIME currentLocalTime) {
+/*
+ *	Verify the input data received from the shutdown window
+ */
+int verifyInputTime(SYSTEMTIME currentLocalTime) {
 	// 12: Time in past
 	// 2: Time too near
 	// 4: Ok
@@ -444,8 +533,12 @@ int verify_inputTime(SYSTEMTIME currentLocalTime) {
 		if (lpSysTime.wMinute < currentLocalTime.wMinute)
 			return 12;
 		else if (lpSysTime.wMinute == currentLocalTime.wMinute) {
-			if (lpSysTime.wSecond < currentLocalTime.wSecond)
+			if (lpSysTime.wSecond < currentLocalTime.wSecond) {
+				// char str[200];
+				// sprintf_s(str, "current time: %d:%d:%d, received from user: %d:%d:%d", currentLocalTime.wHour, currentLocalTime.wMinute, currentLocalTime.wSecond, lpSysTime.wHour, lpSysTime.wMinute, lpSysTime.wSecond);
+				// MessageBoxA(NULL, str, "current time", MB_OK);
 				return 12;
+			}
 			else
 				return 2;
 		}
@@ -459,6 +552,12 @@ int verify_inputTime(SYSTEMTIME currentLocalTime) {
 		return 4;
 }
 
+/*
+ * Input dialog (which is actually a winow)
+ * has received positive response from user
+ * It's time to start the timer and wait for time expiry
+ * when we shall start procedure for shutting system down
+ */
 void runProgram(HWND hwnd) {
 	myColor1 = 0x00aaaaaa;
 	myColor2 = 0x00aaaaaa;
@@ -471,14 +570,17 @@ void runProgram(HWND hwnd) {
 	ShowWindow(hwnd, SW_HIDE);
 
 	SetTimer(hwnd, IDT_TIMER1, 60000, (TIMERPROC)NULL);
-	showDialogue = 0;
+	dialogStatus = Inactive;
 }
 
+/*
+ * Checks if the shutdown minute is current minute
+ */
 BOOL isTimeUp () {
 	SYSTEMTIME currentLocalTime;
 	GetLocalTime(&currentLocalTime);
 
-	if (lpSysTime.wYear == currentLocalTime.wYear && lpSysTime.wMonth == currentLocalTime.wMonth && lpSysTime.wDay == currentLocalTime.wDay && lpSysTime.wHour == currentLocalTime.wHour && lpSysTime.wMinute == currentLocalTime.wMinute)
+	if (lpSysTime.wYear == currentLocalTime.wYear && lpSysTime.wMonth == currentLocalTime.wMonth && lpSysTime.wDay == currentLocalTime.wDay && lpSysTime.wHour == currentLocalTime.wHour && lpSysTime.wMinute >= currentLocalTime.wMinute)
 		return TRUE;
 	return FALSE;
 }
@@ -497,7 +599,7 @@ BOOL CALLBACK DlgProc(HWND hwndDlg,
 			hDC = BeginPaint(hwndDlg, &Ps);
 
 			// Load the bitmap from the resource
-			hBmp = LoadBitmap(g_hinst, MAKEINTRESOURCE(IDB_BMP));
+			hBmp = LoadBitmap(g_hInst, MAKEINTRESOURCE(IDB_BMP));
 			// Create a memory device compatible with the above DC variable
 			MemDC = CreateCompatibleDC(hDC);
 				 // Select the new bitmap
@@ -544,7 +646,7 @@ BOOL CALLBACK DlgProc(HWND hwndDlg,
 
 			InitCommonControlsEx(&icex);
 
-			g_hLink = CreateSysLink(hwndDlg, g_hinst, rect);
+			g_hLink = CreateSysLink(hwndDlg, g_hInst, rect);
 			return TRUE;
 
         case WM_COMMAND: 
@@ -568,8 +670,8 @@ BOOL CALLBACK DlgProc(HWND hwndDlg,
 }
 
 HWND CreateSysLink(HWND hDlg, HINSTANCE hInst, RECT rect) {
-    return CreateWindowEx(0, WC_LINK, 
-        L"<A HREF=\"http://atique.0fees.net/saff/std\">SA First Flush</A>", 
+    return CreateWindowEx(0, WC_LINK,						// Fix for WC_LINK wchar_t which is no more required as we are adopting unicode, reference: http://www.cplusplus.com/forum/windows/46297/
+        L"<A HREF=\"http://saos.co.in/std\">SAOS</A>",
         WS_VISIBLE | WS_CHILD | WS_TABSTOP, 
         rect.left, rect.top, rect.right, rect.bottom, 
         hDlg, NULL, hInst, NULL);
